@@ -10,7 +10,7 @@ cloudinary.config({
 const uploadOnCloudinary = async (localFilePath) => {
      try{
           if(!localFilePath) {
-               console.error('Invalid FIle Path')
+               console.log('Invalid FIle Path')
                return null
           }
 
@@ -18,7 +18,8 @@ const uploadOnCloudinary = async (localFilePath) => {
                resource_type: "auto"
           })
 
-          console.log(`The file has been uploaded successfully on cloudinary: ${response.url}`) // url to access uploaded file
+          // console.log(`The file has been uploaded successfully on cloudinary: ${response.url}`)
+          // console.log("Whole response : ", response)
 
           fs.unlinkSync(localFilePath)
           return response
