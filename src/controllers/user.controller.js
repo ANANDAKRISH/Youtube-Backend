@@ -3,6 +3,8 @@ import { ApiError } from "../utils/ApiError.js"
 import { User } from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
+import jwt from "jsonwebtoken"
+import { application } from "express"
 
 const generateAccessAndRefreshTokens = async(userId) => {
     try {
@@ -164,9 +166,65 @@ const logoutUser = asyncHandler(async(req,res) => {
 
 })
 
+const refreshAccessToken = asyncHandler (async(req,res) => {
+    const incomingRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken
+
+    if(!incomingRefreshToken) {
+        throw new ApiError(401,"Unauthorized request")
+    }
+
+try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        )
+    
+        const user = await User.findById(decodedToken?._id)
+    
+        if(!user) {
+            throw new ApiError(401,"Invalid refresh token")
+        }
+    
+        if(incomingRefreshToken !== user?.refreshToken) {
+            throw new ApiError(401,"Refresh token is expired or used")
+        }
+    
+        const {newRefreshToken , accessToken} = await generateAccessAndRefreshTokens(user._id) 
+        // we used the variable name as newRefreshToken instead of refreshToken to avoid any possible clash 
+        // with user.refreshToken , but I hope that still won't be an issue
+    
+        const options = {
+            httpOnly:true,
+            secure:true
+        }
+    
+        return res
+        .status(200)
+        .cookie("accessToken",accessToken,options)
+        .cookie("refershToken",newRefreshToken,options)
+        .json(
+            new ApiResponse(
+                200,
+                {accessToken , refreshToken : newRefreshToken},
+                "Access Token Refreshed"
+            )
+        )
+} catch (error) {
+    throw new ApiError(401 , error?.message || "Invalid refresh token")
+}
+
+})
+
+// I think refreshTOken expiry scenario won't happen. Suppose the user logs in and generates both tokens. Whenever 
+// accessToken is refreshed , new refreshToken is also generated. 
+// Also on logout both tokens are wiped out and on login , new tokens are generated - thus even if a user login
+// after 1 month , new tokens will be generated on new login (refreshTOken may last for days or weeks but anyways
+// after logout it is wiped out and new ones are generated when logged in again)
+
 export {
     registerUser,
     loginUser,
-    logoutUser
+    logoutUser,
+    refreshAccessToken
 }
 
