@@ -2,6 +2,7 @@ import {asyncHandler} from "../utils/asyncHandler.js"
 import { ApiError } from "../utils/ApiError.js"
 import { User } from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
+import { deleteFromCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 import jwt from "jsonwebtoken"
 import { application } from "express"
@@ -221,10 +222,148 @@ try {
 // after 1 month , new tokens will be generated on new login (refreshTOken may last for days or weeks but anyways
 // after logout it is wiped out and new ones are generated when logged in again)
 
+const changeCurrentPassword = asyncHandler (async(req,res) => {
+    const {oldPassword , newPassword , confPassword} = req.body
+
+    if(!(newPassword === confPassword)) {
+        throw new ApiError(401,"New password and confirmed password doesn't match")
+    }
+
+    const user = await User.findById(req.user?._id)
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
+
+    if(!isPasswordCorrect) {
+        throw new ApiError(401,"Invalid old password")
+    }
+
+    user.password = newPassword
+    await user.save({validateBeforeSave : false})
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200 , {} , "Password updated successfully"))
+
+})
+
+const getCurrentUser = asyncHandler (async(req,res) => {
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200, req.user , "Current User fetched successfully"))
+})
+
+const updateAccountDetails = asyncHandler (async(req,res) => {
+
+    const {fullName , email} = req.body // username is something which is usually not updated once set
+
+    if(!fullName || !email) {
+        throw new ApiError(400,"All fields are required")
+    } // Same as if (!(fullName && email))
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set : {
+                fullName : fullName,
+                email : email
+                // as field name & value is reprsented by same name , we can simply write {fullName , email} 
+                // instead of {fullName: fullName , email : email}
+            }
+        },
+        {
+            new: true
+        }
+    ).select("-password -refreshToken")
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200 , user , "Account Details updated successfully"))
+})
+
+const updateUserAvatar = asyncHandler (async(req,res) => {
+    const avatarLocalPath = req.file?.path
+
+    if(!avatarLocalPath) {
+        throw new ApiError(400, "Avatar file is missing")
+    }
+
+    const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+    if(!avatar.url) { // if(!avatar) is also fine
+        throw new ApiError(400 , "Failed to upload image")
+    }
+
+    const currentUser = await User.findById(req.user._id)
+    const oldAvatarUrl = currentUser.avatar
+
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                avatar : avatar.url
+            }
+        },
+        {new: true}
+    ).select("-password -refreshToken")
+     
+    // If update successful, delete old avatar from Cloudinary
+    if(user && oldAvatarUrl) {
+        await deleteFromCloudinary(oldAvatarUrl)
+    }
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200 , user , "Avatar image updated successfully"))
+})
+
+const updateUserCoverImage = asyncHandler (async(req,res) => {
+
+    const coverImageLocalPath = req.file?.path
+
+    if(!coverImageLocalPath) {
+        throw new ApiError(400,"Cover Image file is missing")
+    }
+
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+
+    if(!coverImage.url) {
+        throw new ApiError(401,"Error while uploading the coverImage file")
+    }
+
+    const currentUser = await User.findById(req.user._id)
+    const oldCoverImageUrl = currentUser.coverImage
+
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set : {
+                coverImage : coverImage.url
+            }
+        },
+        {new:true}
+    ).select("-password -refreshToken")
+
+    if(user && oldCoverImageUrl) {
+        await deleteFromCloudinary(oldCoverImageUrl)
+    }
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200,user,"Cover Image updated successfully"))
+
+})
+
+
+
 export {
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccessToken
+    refreshAccessToken,
+    changeCurrentPassword,
+    getCurrentUser,
+    updateAccountDetails,
+    updateUserAvatar,
+    updateUserCoverImage
 }
 
