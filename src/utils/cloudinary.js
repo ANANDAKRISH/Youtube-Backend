@@ -31,10 +31,11 @@ const uploadOnCloudinary = async (localFilePath) => {
      }
 }
 
-const deleteFromCloudinary = async (url) => {
+const deleteFromCloudinary = async (url , resourceType = "image") => {
      try {
           const publicId = url.split('/').pop().split('.')[0]
-          await cloudinary.uploader.destroy(publicId)
+          console.log(`Public Id of the file is : ${publicId}`); // this helps for testing
+          await cloudinary.uploader.destroy(publicId , { resource_type: resourceType })
           
      } catch (error) {
           console.log(`The following error occured during deleting the file from cloudinary : ${error}`);

@@ -133,28 +133,26 @@ const getAllVideos = asyncHandler(async (req,res) => {
         
     })
 
-    
 })
 
-const publishAVideo = asyncHandler(async (req, res) => {
+const publishAVideo = asyncHandler(async (req, res) => { 
     const { title, description} = req.body
 
     if([title,description].some((field) => field?.trim() === "")) {
         throw new ApiError(400 , "Title & Description are required fields")
     }
-
+   
     const videoFileLocalPath = req.files?.videoFile?.[0]?.path
     const thumbnailLocalPath = req.files?.thumbnail?.[0]?.path
 
-    if(!(videoLocalPath && thumbnailLocalPath)) { // (!videoLocalPath || !thumbnailLocalPAth)
+    if(!(videoFileLocalPath && thumbnailLocalPath)) { // (!videoLocalPath || !thumbnailLocalPAth)
         throw new ApiError(400,"Video or Thumbnail is missing. Both are required fields")
     }
 
     const videoFile = await uploadOnCloudinary(videoFileLocalPath)
     const thumbnail = await uploadOnCloudinary(thumbnailLocalPath)
-
-    // console.log(videoFile);
-    // console.log(thumbnail);
+    
+    console.log('The video cloudinary data :', videoFile) 
 
     if(!videoFile) {
         throw new ApiError(400,"Failed to upload the video file")
@@ -170,11 +168,13 @@ const publishAVideo = asyncHandler(async (req, res) => {
         duration : videoFile?.duration, // directly available from cloudinary
         videoFile : {
             url : videoFile?.url,
-            public_id : videoFile?.public_id
+            public_id : videoFile?.public_id,
+            resource_type : videoFile?.resource_type,
         },
         thumbnail : {
             url : thumbnail?.url,
-            public_id : thumbnail?.public_id
+            public_id : thumbnail?.public_id,
+            resource_type : thumbnail?.resource_type,
         },
         owner : req.user?._id,
         isPublished : false
@@ -183,7 +183,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
     const uploadedVideo = await Video.findById(video._id) // just verifying to see if the document is actually registered in DB
 
     if(!uploadedVideo) {
-        throw new ApiError(400,"Video doesn't exist")
+        throw new ApiError(500,"Video document creation failed")
     }
 
     return res
@@ -327,13 +327,18 @@ const updateVideo = asyncHandler(async (req, res) => {
     if(!video) {
         throw new ApiError(400,"Video not found")
     }
+
+    if(req.user?._id.toString() !== video?.owner.toString()) {
+        throw new ApiError(400,"Access denied as you are not the owner of this video")
+    }
   
     const {title,description} = req.body
     const thumbnailLocalPath = req.file?.path // req.file is an object containing info about uploaded file
-    // console.log(req.file)
+    // console.log('Contents of req.file:', req.file);
    
     const updateFields = {}
-
+    
+    // If field values are unchanged there is no point in simply updating the same thing
     if(title.trim() && title.trim() !== video.title.trim()) {
         updateFields.title = title.trim()
     }
@@ -357,7 +362,8 @@ const updateVideo = asyncHandler(async (req, res) => {
 
         updateFields.thumbnail = {
             url : thumbnail?.url,
-            public_id : thumbnail?.public_id
+            public_id : thumbnail?.public_id,
+            resource_type : thumbnail?.resource_type
         }
     }
     
@@ -381,7 +387,7 @@ const updateVideo = asyncHandler(async (req, res) => {
     if(!updatedVideo) {
         //if update failed due to some reason , we remove the file from cloudinary
         await deleteFromCloudinary(thumbnail?.url) 
-        throw new ApiError(400,"Update failed")
+        throw new ApiError(400,"Video not found & thus Update failed")
     }
     
     return res
@@ -402,14 +408,18 @@ const deleteVideo = asyncHandler(async (req, res) => {
         throw new ApiError(400,"VIdeo not found")
     }
 
+    if(req.user?._id.toString() !== video?.owner.toString()) {
+        throw new ApiError(400,"Access denied as you are not the owner of this video")
+    }
+
     // Delete thumbnail & video from cloudinary
     const cloudinaryDeletions = []
     if(video.thumbnail?.url) {
-        cloudinaryDeletions.push(deleteFromCloudinary(video.thumbnail?.url))
+        cloudinaryDeletions.push(deleteFromCloudinary(video.thumbnail?.url , video.thumbnail?.resource_type))
     }
 
     if(video.videoFile?.url) {
-        cloudinaryDeletions.push(deleteFromCloudinary(video.videoFile?.url))
+        cloudinaryDeletions.push(deleteFromCloudinary(video.videoFile?.url , video.videoFile?.resource_type))
     }
     
     // wait for cloudinary operations to complete
